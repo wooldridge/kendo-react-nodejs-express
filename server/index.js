@@ -1,4 +1,5 @@
 const express = require("express");
+const marklogic = require("./marklogic");
 const app = express();
 const cors = require("cors");
 
@@ -8,22 +9,21 @@ const { process } = require('@progress/kendo-data-query');
 
 const currentYear = new Date().getFullYear();
 
-const parsedData = data.sampleProducts.map(product => {
-    const date = new Date(product.FirstOrderedOn);
-    date.setFullYear(currentYear);
-    product.FirstOrderedOn = date.toISOString()
-    return product;
-})
-
 app.use(cors());
 app.use(express.json());
 
-app.get("/products", (req, res) => {
+app.get("/products", async (req, res) => {
     let dataState = req.query.dataState;
-    // this is the place to get the items from the database
+    // Get products
+    let mlResponse;
+    try {
+      mlResponse = await marklogic.getDocs('product');
+    } catch(error) {
+      console.error(error);
+    }
     let skip = parseInt(dataState.skip);
     let take = parseInt(dataState.take);
-    res.send(process(parsedData,
+    res.send(process(mlResponse,
         {
             skip: skip,
             take: take,
@@ -34,36 +34,62 @@ app.get("/products", (req, res) => {
     ));
 });
 
-app.put("/update", (req, res) => {
+app.put("/update", async (req, res) => {
     let dataState = req.body.dataState;
     const item = req.body.item;
     const id = item.ProductID;
-    // this is the place to update the database and return success if it was successful
-    let index = parsedData.findIndex(item => item.ProductID === id);
-    parsedData[index] = item;
-    parsedData[index].inEdit = false;
-    // return error if any
-    res.send(process(parsedData, dataState));
+    // Update product
+    let mlResponse;
+    try {
+      mlResponse = await marklogic.updateDoc(id, item, 'product');
+    } catch(error) {
+      console.error(error);
+    }
+    // Refresh
+    try {
+      mlResponse = await marklogic.getDocs('product');
+    } catch(error) {
+      console.error(error);
+    }
+    res.send(process(mlResponse, dataState));
 });
 
-app.post("/create", (req, res) => {
+app.post("/create", async (req, res) => {
     const item = req.body.item
+    // Create product
+    let mlResponse;
+    try {
+      mlResponse = await marklogic.createDoc(item, 'product');
+    } catch(error) {
+      console.error(error);
+    }
     let dataState = req.body.dataState;
-    const id = parsedData.length + 1;
-    item.ProductID = id;
-    item.inEdit = false;
-    parsedData.unshift(item);
-    res.send(process(parsedData, dataState));
+    // Refresh
+    try {
+      mlResponse = await marklogic.getDocs('product');
+    } catch(error) {
+      console.error(error);
+    }
+    res.send(process(mlResponse, dataState));
 });
 
-app.delete("/delete/:id", (req, res) => {
+app.delete("/delete/:id", async (req, res) => {
     let dataState = req.body.dataState;
     const id = parseInt(req.params.id);
-    // this is the place to delete the item from the database and return success if it was successful
-    let index = parsedData.findIndex(item => item.ProductID === id);
-    parsedData.splice(index, 1);
-    // return error if any
-    res.send(process(parsedData, dataState));
+    // Delete product
+    let mlResponse;
+    try {
+      mlResponse = await marklogic.deleteDoc(id);
+    } catch(error) {
+      console.error(error);
+    }
+    // Refresh
+    try {
+      mlResponse = await marklogic.getDocs('product');
+    } catch(error) {
+      console.error(error);
+    }
+    res.send(process(mlResponse, dataState));
 });
 
 
